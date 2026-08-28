@@ -1,0 +1,199 @@
+(ns reachy-goto-core
+  (:export [interpolation-none interpolation-linear interpolation-minimum-jerk
+            status-none status-unknown status-accepted status-executing
+            status-canceling status-succeeded status-canceled status-aborted
+            arm-joint-count neck-joint-count
+            min-duration-ms max-duration-ms
+            reason-ok reason-part-not-ready reason-joint-count
+            reason-interpolation reason-duration reason-joint-limit
+            interpolation-admitted? duration-admitted? joint-count-ok?
+            within-limit? goto-shape-reason admit-reason admitted? admit-code
+            terminal? cancellable? active? status-after-cancel
+            transition-admitted?]))
+
+;; Decision core for the Reachy 2 goto surface (`GoToService`,
+;; protos/goto.proto; arm/neck joint goals from arm.proto and head.proto).
+;;
+;; What moved here: whether a goto request is admissible, and which GoalStatus
+;; transitions are legal. What stayed on the host: the trajectory itself, the
+;; queue's storage, the clock, the gRPC round trip, and the degrees ->
+;; millidegrees conversion.
+;;
+;; Angles are INTEGER MILLIDEGREES and durations INTEGER MILLISECONDS. The
+;; SDK presents degrees and seconds as floats; a limit check that decides
+;; whether a motor moves must not depend on which backend rounded the compare,
+;; so the conversion happens once at the host boundary and the decision is
+;; made in integers. Millidegrees is finer than any Reachy 2 encoder reports.
+;;
+;; This core does NOT carry joint limits. The robot reports its own limits
+;; (ArmService.GetJointsLimits / HeadService.GetJointsLimits); an actor that
+;; hard-codes them is asserting a hardware fact it did not measure, and would
+;; keep asserting it after a firmware change. `within-limit?` takes the
+;; reported pair and treats an inverted or absent pair as a refusal.
+;;
+;; Oracle retained: src/pollen_robotics/main.cljc (`admit-reason`,
+;; `transition-admitted?`).
+;; Parity: test/pollen_robotics/main_test.cljc (`goto-core-parity`).
+
+;; -- the wire codes -------------------------------------------------------
+;; InterpolationMode. NONE_INTERPOLATION (0) is the proto3 zero value, i.e.
+;; "the field was not set", so it is refused rather than defaulted: a caller
+;; who did not say how to interpolate did not ask for minimum jerk.
+
+(defn interpolation-none [] :i64 0)
+(defn interpolation-linear [] :i64 1)
+(defn interpolation-minimum-jerk [] :i64 2)
+
+;; GoalStatus, pinned to the ordinals the proto declares.
+(defn status-none [] :i64 0)
+(defn status-unknown [] :i64 1)
+(defn status-accepted [] :i64 2)
+(defn status-executing [] :i64 3)
+(defn status-canceling [] :i64 4)
+(defn status-succeeded [] :i64 5)
+(defn status-canceled [] :i64 6)
+(defn status-aborted [] :i64 7)
+
+;; ArmJoints declares seven; NeckJoints declares three.
+(defn arm-joint-count [] :i64 7)
+(defn neck-joint-count [] :i64 3)
+
+;; A duration of zero is not "as fast as possible" -- that is what writing
+;; goal_position directly does, and the SDK documents it as the dangerous
+;; path. A goto with no duration is refused. The ceiling is a bound on how
+;; long one queued request may hold a part, not a hardware fact.
+(defn min-duration-ms [] :i64 1)
+(defn max-duration-ms [] :i64 600000)
+
+;; -- reasons --------------------------------------------------------------
+;; Strings, and the literal a caller can pin. "denied" would pass a test after
+;; a rename upstream; these do not.
+
+(defn reason-ok [] :string "ok")
+(defn reason-part-not-ready [] :string "part-not-ready")
+(defn reason-joint-count [] :string "joint-count-mismatch")
+(defn reason-interpolation [] :string "interpolation-mode-not-admitted")
+(defn reason-duration [] :string "duration-out-of-range")
+(defn reason-joint-limit [] :string "joint-limit-exceeded")
+
+;; -- the admission checks -------------------------------------------------
+
+(defn interpolation-admitted? [mode :i64] :bool
+  (if (= mode (interpolation-linear))
+    true
+    (= mode (interpolation-minimum-jerk))))
+
+(defn duration-admitted? [duration-ms :i64] :bool
+  (if (< duration-ms (min-duration-ms))
+    false
+    (<= duration-ms (max-duration-ms))))
+
+(defn joint-count-ok? [n :i64 expected :i64] :bool
+  (= n expected))
+
+(defn within-limit? [q-millideg :i64 min-millideg :i64 max-millideg :i64] :bool
+  ;; An inverted pair is not an empty range to be silently accepted; it is a
+  ;; limit the robot did not report, and it fails closed.
+  (if (> min-millideg max-millideg)
+    false
+    (if (< q-millideg min-millideg)
+      false
+      (<= q-millideg max-millideg))))
+
+(defn goto-shape-reason [part-ready :bool joint-count :i64 expected-count :i64
+                         interpolation :i64 duration-ms :i64] :string
+  ;; Everything decidable without the limit table. Ordered so the first
+  ;; failure a caller can act on is the one reported.
+  (if (not part-ready)
+    (reason-part-not-ready)
+    (if (not (joint-count-ok? joint-count expected-count))
+      (reason-joint-count)
+      (if (not (interpolation-admitted? interpolation))
+        (reason-interpolation)
+        (if (not (duration-admitted? duration-ms))
+          (reason-duration)
+          (reason-ok))))))
+
+(defn admit-reason [shape-reason :string limits-ok :bool] :string
+  ;; The per-joint sweep is a fold the host runs over the reported limit
+  ;; table, calling `within-limit?` once per joint; its conjunction arrives
+  ;; here. Splitting it this way keeps every function inside the five-argument
+  ;; ABI bound without hiding the decision behind it.
+  (if (not (string=? shape-reason (reason-ok)))
+    shape-reason
+    (if (not limits-ok)
+      (reason-joint-limit)
+      (reason-ok))))
+
+(defn admitted? [shape-reason :string limits-ok :bool] :bool
+  (string=? (admit-reason shape-reason limits-ok) (reason-ok)))
+
+(defn admit-code [shape-reason :string limits-ok :bool] :i64
+  ;; Same decision read out as a code, derived from the reason rather than
+  ;; decided again, so the two cannot disagree.
+  (let [r (admit-reason shape-reason limits-ok)]
+    (if (string=? r (reason-ok))
+      0
+      (if (string=? r (reason-part-not-ready))
+        1
+        (if (string=? r (reason-joint-count))
+          2
+          (if (string=? r (reason-interpolation))
+            3
+            (if (string=? r (reason-duration))
+              4
+              5)))))))
+
+;; -- the lifecycle --------------------------------------------------------
+
+(defn terminal? [status :i64] :bool
+  (if (= status (status-succeeded))
+    true
+    (if (= status (status-canceled))
+      true
+      (= status (status-aborted)))))
+
+(defn active? [status :i64] :bool
+  (if (= status (status-accepted))
+    true
+    (if (= status (status-executing))
+      true
+      (= status (status-canceling)))))
+
+(defn cancellable? [status :i64] :bool
+  ;; CANCELING is already cancelling; cancelling it again is not an error but
+  ;; it is not a transition either, and CancelGoTo must not report progress it
+  ;; did not make.
+  (if (= status (status-accepted))
+    true
+    (= status (status-executing))))
+
+(defn status-after-cancel [status :i64] :i64
+  (if (cancellable? status)
+    (status-canceling)
+    status))
+
+(defn transition-admitted? [from :i64 to :i64] :bool
+  ;; The only legal walk: ACCEPTED -> EXECUTING -> {SUCCEEDED, ABORTED}, with
+  ;; CANCELING reachable from either live state and settling on CANCELED. A
+  ;; terminal status is terminal -- nothing leaves it, including a repeat of
+  ;; itself, so a duplicated completion event cannot be mistaken for progress.
+  (if (terminal? from)
+    false
+    (if (= from (status-accepted))
+      (if (= to (status-executing))
+        true
+        (if (= to (status-canceling))
+          true
+          (= to (status-aborted))))
+      (if (= from (status-executing))
+        (if (= to (status-succeeded))
+          true
+          (if (= to (status-canceling))
+            true
+            (= to (status-aborted))))
+        (if (= from (status-canceling))
+          (if (= to (status-canceled))
+            true
+            (= to (status-aborted)))
+          false)))))

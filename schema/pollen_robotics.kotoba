@@ -1,0 +1,184 @@
+// Pollen Robotics (Reachy 2) clean-room schema -> Datomic EAVT mapping.
+//
+// Derived from the resource SHAPES published in pollen-robotics/reachy2-sdk-api
+// (protos/, Apache-2.0) and docs.pollen-robotics.com. No upstream code, no
+// generated stubs and no credentials are reproduced here -- only the shape of
+// the state a Reachy 2 reports and the shape of the commands it accepts.
+//
+// Rigid transforms are stored as translation + unit quaternion rather than as
+// kinematics.Matrix4x4's 16 doubles: the wire form carries redundancy an EAVT
+// log cannot keep consistent (a 4x4 whose upper block has drifted off SO(3) is
+// representable but is not a pose), and t/q is the same information without it.
+// The 4x4 is reconstructed at the boundary, not stored.
+//
+// Angles are degrees, distances metres, durations seconds -- the units the
+// Python SDK presents, not the radians/metres of the gRPC layer underneath.
+
+namespace pollen_robotics {
+
+    // ReachyService.GetReachy -> Reachy.info
+    entity ReachyInfo {
+        id: string @unique
+        name: string
+        serial_number: string
+        version_hard: string
+        version_soft: string
+        createdAt: datetime
+        updatedAt: datetime
+    }
+
+    // reachy.part.PartId + PartInfo. One row per addressable part:
+    // l_arm, r_arm, head, l_hand, r_hand, mobile_base.
+    entity Part {
+        id: string @unique
+        name: string
+        kind: string
+        activated: boolean
+        serial_number: string
+        version_hard: string
+        version_soft: string
+        createdAt: datetime
+        updatedAt: datetime
+    }
+
+    // reachy.part.arm.ArmPosition, flattened to the seven ArmJoints in the
+    // order the enum declares them. The Python SDK's goto() list is this order.
+    entity ArmJointState {
+        id: string @unique
+        part: string
+        shoulder_pitch: float
+        shoulder_roll: float
+        elbow_yaw: float
+        elbow_pitch: float
+        wrist_roll: float
+        wrist_pitch: float
+        wrist_yaw: float
+        createdAt: datetime
+        updatedAt: datetime
+    }
+
+    // ArmService.GetJointsLimits / HeadService.GetJointsLimits /
+    // HandService.GetJointLimit, normalised to one row per joint. The robot
+    // reports these; this actor never invents them.
+    entity JointLimit {
+        id: string @unique
+        part: string
+        joint: string
+        min: float
+        max: float
+        createdAt: datetime
+        updatedAt: datetime
+    }
+
+    // ArmService.GetCartesianPosition / ComputeArmFK -> ArmEndEffector.
+    entity EndEffectorPose {
+        id: string @unique
+        part: string
+        tx: float
+        ty: float
+        tz: float
+        qw: float
+        qx: float
+        qy: float
+        qz: float
+        createdAt: datetime
+        updatedAt: datetime
+    }
+
+    // HeadService.GetOrientation -> kinematics.Rotation3d as ExtEulerAngles.
+    entity NeckOrientation {
+        id: string @unique
+        part: string
+        roll: float
+        pitch: float
+        yaw: float
+        createdAt: datetime
+        updatedAt: datetime
+    }
+
+    // component.dynamixel_motor.DynamixelMotorState for l_antenna / r_antenna.
+    entity AntennaState {
+        id: string @unique
+        part: string
+        joint: string
+        present_position: float
+        goal_position: float
+        temperature: float
+        compliant: boolean
+        createdAt: datetime
+        updatedAt: datetime
+    }
+
+    // reachy.part.hand.HandState, parallel-gripper variant.
+    entity HandState {
+        id: string @unique
+        part: string
+        opening: float
+        force: float
+        holding_object: boolean
+        compliant: boolean
+        temperature_motor: float
+        temperature_driver: float
+        createdAt: datetime
+        updatedAt: datetime
+    }
+
+    // GoToService: one row per accepted request, carrying its GoalStatus.
+    // space is "joint" | "cartesian"; interpolation_mode is the
+    // InterpolationMode enum ordinal; status is the GoalStatus ordinal.
+    entity GoToRequest {
+        id: string @unique
+        part: string
+        space: string
+        interpolation_mode: integer
+        duration: float
+        status: integer
+        order_id: integer
+        createdAt: datetime
+        updatedAt: datetime
+    }
+
+    // MobileBaseUtilityService.GetOdometry + GetBatteryLevel + GetZuuuMode +
+    // GetControlMode, collapsed into the one row a caller actually reads.
+    entity MobileBaseState {
+        id: string @unique
+        part: string
+        x: float
+        y: float
+        theta: float
+        battery_level: float
+        zuuu_mode: integer
+        control_mode: integer
+        createdAt: datetime
+        updatedAt: datetime
+    }
+
+    // MobileBaseLidarService.GetZuuuSafety + GetLidarObstacleDetectionStatus.
+    // safety_distance / critical_distance are metres as the service reports
+    // them; the decision core consumes millimetres, converted at the boundary.
+    entity LidarSafety {
+        id: string @unique
+        part: string
+        safety_on: boolean
+        safety_distance: float
+        critical_distance: float
+        obstacle_distance: float
+        obstacle_detection_status: integer
+        createdAt: datetime
+        updatedAt: datetime
+    }
+
+    // component.video.CameraFeatures + CameraParameters.
+    entity CameraFeature {
+        id: string @unique
+        name: string
+        stereo: boolean
+        depth: boolean
+        height: integer
+        width: integer
+        distortion_model: string
+        createdAt: datetime
+        updatedAt: datetime
+    }
+
+}
