@@ -1,0 +1,27 @@
+Copyright 2026 Jun Kawasaki
+
+This product is licensed under the Apache License, Version 2.0
+(see LICENSE). No additional terms or conditions apply.
+
+Clean-room notice
+-----------------
+This repository is a clean-room, API-compatible implementation. It reproduces
+resource SHAPES and documented behaviour of the Pollen Robotics Reachy 2
+developer SDK, taken from:
+
+    https://github.com/pollen-robotics/reachy2-sdk-api  (protos/, Apache-2.0)
+    https://docs.pollen-robotics.com/
+
+No upstream source code, generated protobuf/gRPC stub, binary artifact or
+credential is copied or vendored here. "Reachy", "Reachy 2" and "Pollen
+Robotics" are used nominatively to identify the API this actor is compatible
+with; no affiliation with or endorsement by Pollen Robotics is claimed.
+
+Defensive publication
+---------------------
+Subject matter in this repository is disclosed as prior art in DP-2026-001:
+
+    https://github.com/com-junkawasaki/prior-art
+
+No patent protection is sought by the copyright holder for any subject matter
+disclosed there.
