@@ -1,0 +1,535 @@
+{
+  "schemaVersion": "1.0",
+  "handle": "pollen_robotics-compat",
+  "did": "did:web:etzhayyim.com:actor:pollen_robotics-compat",
+  "kind": "compat",
+  "title": "Pollen Robotics (Reachy 2) clean-room actor",
+  "description": "Clean-room, API-compatible actor for the Pollen Robotics Reachy 2 developer SDK; policy and bookkeeping, not control. Runs browser-local on IPFS + kotoba-WASM.",
+  "runtime": "kotoba-wasm",
+  "exec": "browser-local|donated-mesh",
+  "schema": "schema/pollen_robotics.kotoba",
+  "cores": [
+    {
+      "name": "reachy-lidar-safety-core",
+      "source": "cores/reachy_lidar_safety_core.cljk",
+      "decides": "LidarObstacleDetectionEnum classification and the surviving base-speed scale",
+      "upstream": "protos/mobile_base_lidar.proto"
+    },
+    {
+      "name": "reachy-goto-core",
+      "source": "cores/reachy_goto_core.cljk",
+      "decides": "goto admission and the GoalStatus lifecycle",
+      "upstream": "protos/goto.proto"
+    }
+  ],
+  "tier": "L5",
+  "verified": {
+    "source": "https://github.com/pollen-robotics/reachy2-sdk-api",
+    "docs": "https://docs.pollen-robotics.com/",
+    "verifiedAt": "2026-08-28",
+    "protos": [
+      "arm.proto",
+      "component.proto",
+      "dynamixel_motor.proto",
+      "error.proto",
+      "goto.proto",
+      "hand.proto",
+      "head.proto",
+      "kinematics.proto",
+      "mobile_base_lidar.proto",
+      "mobile_base_mobility.proto",
+      "mobile_base_utility.proto",
+      "orbita2d.proto",
+      "orbita3d.proto",
+      "parallel_gripper.proto",
+      "part.proto",
+      "reachy.proto",
+      "video.proto",
+      "webrtc_bridge.proto"
+    ],
+    "resources": [
+      "ReachyInfo",
+      "Part",
+      "ArmJointState",
+      "JointLimit",
+      "EndEffectorPose",
+      "NeckOrientation",
+      "AntennaState",
+      "HandState",
+      "GoToRequest",
+      "MobileBaseState",
+      "LidarSafety",
+      "CameraFeature"
+    ],
+    "enums": {
+      "ArmJoints": [
+        "SHOULDER_PITCH",
+        "SHOULDER_ROLL",
+        "ELBOW_YAW",
+        "ELBOW_PITCH",
+        "WRIST_ROLL",
+        "WRIST_PITCH",
+        "WRIST_YAW"
+      ],
+      "NeckJoints": [
+        "ROLL",
+        "PITCH",
+        "YAW"
+      ],
+      "InterpolationMode": [
+        "NONE_INTERPOLATION",
+        "LINEAR",
+        "MINIMUM_JERK"
+      ],
+      "GoalStatus": [
+        "NONE",
+        "STATUS_UNKNOWN",
+        "STATUS_ACCEPTED",
+        "STATUS_EXECUTING",
+        "STATUS_CANCELING",
+        "STATUS_SUCCEEDED",
+        "STATUS_CANCELED",
+        "STATUS_ABORTED"
+      ],
+      "LidarObstacleDetectionEnum": [
+        "DETECTION_ERROR",
+        "NO_OBJECT_DETECTED",
+        "OBJECT_DETECTED_SLOWDOWN",
+        "OBJECT_DETECTED_STOP"
+      ],
+      "ZuuuModePossiblities": [
+        "NONE_ZUUU_MODE",
+        "CMD_VEL",
+        "BRAKE",
+        "FREE_WHEEL",
+        "SPEED",
+        "GOTO",
+        "EMERGENCY_STOP",
+        "CMD_GOTO"
+      ],
+      "ControlModePossiblities": [
+        "NONE_CONTROL_MODE",
+        "OPEN_LOOP",
+        "PID"
+      ]
+    },
+    "parts": [
+      "l_arm",
+      "r_arm",
+      "head",
+      "l_hand",
+      "r_hand",
+      "mobile_base"
+    ],
+    "notReproduced": [
+      "upstream source code",
+      "generated protobuf/gRPC stubs",
+      "joint limits (the robot reports its own)",
+      "inverse kinematics",
+      "video/audio payloads"
+    ]
+  },
+  "entities": [
+    "ReachyInfo",
+    "Part",
+    "ArmJointState",
+    "JointLimit",
+    "EndEffectorPose",
+    "NeckOrientation",
+    "AntennaState",
+    "HandState",
+    "GoToRequest",
+    "MobileBaseState",
+    "LidarSafety",
+    "CameraFeature"
+  ],
+  "units": {
+    "angle": "degrees at the surface, integer millidegrees in the decision cores",
+    "distance": "metres at the surface, integer millimetres in the decision cores",
+    "duration": "seconds at the surface, integer milliseconds in the decision cores",
+    "rationale": "a limit check that decides whether a motor moves must not depend on which backend rounded the compare"
+  },
+  "governor": {
+    "repo": "kotoba-lang/robotics",
+    "note": "this actor proposes; the governor gates. governed-speed-scale-permille is the gate's input, deliberately stricter than the robot's own sdk-speed-scale-permille."
+  },
+  "capabilities": {
+    "api": {
+      "type": "rest",
+      "runtime": "kotoba-wasm",
+      "endpointCount": 64,
+      "routes": [
+        {
+          "method": "POST",
+          "path": "/v1/reachyinfos",
+          "op": "create ReachyInfo"
+        },
+        {
+          "method": "GET",
+          "path": "/v1/reachyinfos",
+          "op": "list ReachyInfo"
+        },
+        {
+          "method": "GET",
+          "path": "/v1/reachyinfos/{id}",
+          "op": "get ReachyInfo"
+        },
+        {
+          "method": "PATCH",
+          "path": "/v1/reachyinfos/{id}",
+          "op": "update ReachyInfo"
+        },
+        {
+          "method": "DELETE",
+          "path": "/v1/reachyinfos/{id}",
+          "op": "delete ReachyInfo"
+        },
+        {
+          "method": "POST",
+          "path": "/v1/parts",
+          "op": "create Part"
+        },
+        {
+          "method": "GET",
+          "path": "/v1/parts",
+          "op": "list Part"
+        },
+        {
+          "method": "GET",
+          "path": "/v1/parts/{id}",
+          "op": "get Part"
+        },
+        {
+          "method": "PATCH",
+          "path": "/v1/parts/{id}",
+          "op": "update Part"
+        },
+        {
+          "method": "DELETE",
+          "path": "/v1/parts/{id}",
+          "op": "delete Part"
+        },
+        {
+          "method": "POST",
+          "path": "/v1/armjointstates",
+          "op": "create ArmJointState"
+        },
+        {
+          "method": "GET",
+          "path": "/v1/armjointstates",
+          "op": "list ArmJointState"
+        },
+        {
+          "method": "GET",
+          "path": "/v1/armjointstates/{id}",
+          "op": "get ArmJointState"
+        },
+        {
+          "method": "PATCH",
+          "path": "/v1/armjointstates/{id}",
+          "op": "update ArmJointState"
+        },
+        {
+          "method": "DELETE",
+          "path": "/v1/armjointstates/{id}",
+          "op": "delete ArmJointState"
+        },
+        {
+          "method": "POST",
+          "path": "/v1/jointlimits",
+          "op": "create JointLimit"
+        },
+        {
+          "method": "GET",
+          "path": "/v1/jointlimits",
+          "op": "list JointLimit"
+        },
+        {
+          "method": "GET",
+          "path": "/v1/jointlimits/{id}",
+          "op": "get JointLimit"
+        },
+        {
+          "method": "PATCH",
+          "path": "/v1/jointlimits/{id}",
+          "op": "update JointLimit"
+        },
+        {
+          "method": "DELETE",
+          "path": "/v1/jointlimits/{id}",
+          "op": "delete JointLimit"
+        },
+        {
+          "method": "POST",
+          "path": "/v1/endeffectorposes",
+          "op": "create EndEffectorPose"
+        },
+        {
+          "method": "GET",
+          "path": "/v1/endeffectorposes",
+          "op": "list EndEffectorPose"
+        },
+        {
+          "method": "GET",
+          "path": "/v1/endeffectorposes/{id}",
+          "op": "get EndEffectorPose"
+        },
+        {
+          "method": "PATCH",
+          "path": "/v1/endeffectorposes/{id}",
+          "op": "update EndEffectorPose"
+        },
+        {
+          "method": "DELETE",
+          "path": "/v1/endeffectorposes/{id}",
+          "op": "delete EndEffectorPose"
+        },
+        {
+          "method": "POST",
+          "path": "/v1/neckorientations",
+          "op": "create NeckOrientation"
+        },
+        {
+          "method": "GET",
+          "path": "/v1/neckorientations",
+          "op": "list NeckOrientation"
+        },
+        {
+          "method": "GET",
+          "path": "/v1/neckorientations/{id}",
+          "op": "get NeckOrientation"
+        },
+        {
+          "method": "PATCH",
+          "path": "/v1/neckorientations/{id}",
+          "op": "update NeckOrientation"
+        },
+        {
+          "method": "DELETE",
+          "path": "/v1/neckorientations/{id}",
+          "op": "delete NeckOrientation"
+        },
+        {
+          "method": "POST",
+          "path": "/v1/antennastates",
+          "op": "create AntennaState"
+        },
+        {
+          "method": "GET",
+          "path": "/v1/antennastates",
+          "op": "list AntennaState"
+        },
+        {
+          "method": "GET",
+          "path": "/v1/antennastates/{id}",
+          "op": "get AntennaState"
+        },
+        {
+          "method": "PATCH",
+          "path": "/v1/antennastates/{id}",
+          "op": "update AntennaState"
+        },
+        {
+          "method": "DELETE",
+          "path": "/v1/antennastates/{id}",
+          "op": "delete AntennaState"
+        },
+        {
+          "method": "POST",
+          "path": "/v1/handstates",
+          "op": "create HandState"
+        },
+        {
+          "method": "GET",
+          "path": "/v1/handstates",
+          "op": "list HandState"
+        },
+        {
+          "method": "GET",
+          "path": "/v1/handstates/{id}",
+          "op": "get HandState"
+        },
+        {
+          "method": "PATCH",
+          "path": "/v1/handstates/{id}",
+          "op": "update HandState"
+        },
+        {
+          "method": "DELETE",
+          "path": "/v1/handstates/{id}",
+          "op": "delete HandState"
+        },
+        {
+          "method": "POST",
+          "path": "/v1/gotos",
+          "op": "create GoToRequest"
+        },
+        {
+          "method": "GET",
+          "path": "/v1/gotos",
+          "op": "list GoToRequest"
+        },
+        {
+          "method": "GET",
+          "path": "/v1/gotos/{id}",
+          "op": "get GoToRequest"
+        },
+        {
+          "method": "PATCH",
+          "path": "/v1/gotos/{id}",
+          "op": "update GoToRequest"
+        },
+        {
+          "method": "DELETE",
+          "path": "/v1/gotos/{id}",
+          "op": "delete GoToRequest"
+        },
+        {
+          "method": "POST",
+          "path": "/v1/mobilebasestates",
+          "op": "create MobileBaseState"
+        },
+        {
+          "method": "GET",
+          "path": "/v1/mobilebasestates",
+          "op": "list MobileBaseState"
+        },
+        {
+          "method": "GET",
+          "path": "/v1/mobilebasestates/{id}",
+          "op": "get MobileBaseState"
+        },
+        {
+          "method": "PATCH",
+          "path": "/v1/mobilebasestates/{id}",
+          "op": "update MobileBaseState"
+        },
+        {
+          "method": "DELETE",
+          "path": "/v1/mobilebasestates/{id}",
+          "op": "delete MobileBaseState"
+        },
+        {
+          "method": "POST",
+          "path": "/v1/lidarsafeties",
+          "op": "create LidarSafety"
+        },
+        {
+          "method": "GET",
+          "path": "/v1/lidarsafeties",
+          "op": "list LidarSafety"
+        },
+        {
+          "method": "GET",
+          "path": "/v1/lidarsafeties/{id}",
+          "op": "get LidarSafety"
+        },
+        {
+          "method": "PATCH",
+          "path": "/v1/lidarsafeties/{id}",
+          "op": "update LidarSafety"
+        },
+        {
+          "method": "DELETE",
+          "path": "/v1/lidarsafeties/{id}",
+          "op": "delete LidarSafety"
+        },
+        {
+          "method": "POST",
+          "path": "/v1/camerafeatures",
+          "op": "create CameraFeature"
+        },
+        {
+          "method": "GET",
+          "path": "/v1/camerafeatures",
+          "op": "list CameraFeature"
+        },
+        {
+          "method": "GET",
+          "path": "/v1/camerafeatures/{id}",
+          "op": "get CameraFeature"
+        },
+        {
+          "method": "PATCH",
+          "path": "/v1/camerafeatures/{id}",
+          "op": "update CameraFeature"
+        },
+        {
+          "method": "DELETE",
+          "path": "/v1/camerafeatures/{id}",
+          "op": "delete CameraFeature"
+        }
+      ],
+      "commandRoutes": [
+        {
+          "method": "POST",
+          "path": "/v1/gotos/admit",
+          "op": "admit GoToRequest",
+          "core": "reachy-goto-core"
+        },
+        {
+          "method": "POST",
+          "path": "/v1/gotos/{id}/cancel",
+          "op": "cancel GoToRequest",
+          "core": "reachy-goto-core"
+        },
+        {
+          "method": "POST",
+          "path": "/v1/gotos/{id}/status",
+          "op": "advance GoToRequest",
+          "core": "reachy-goto-core"
+        },
+        {
+          "method": "GET",
+          "path": "/v1/lidarsafeties/{id}/gate",
+          "op": "gate MobileBaseState",
+          "core": "reachy-lidar-safety-core"
+        }
+      ],
+      "features": {
+        "pagination": true,
+        "filtering": true,
+        "relationExpansion": true,
+        "strictValidation": true,
+        "contractTest": true,
+        "coreParityTest": true
+      },
+      "health": "/healthz"
+    },
+    "supplychain": {
+      "type": "cyclonedx-sbom",
+      "runtime": "kotoba-wasm",
+      "sbomData": {
+        "bomFormat": "CycloneDX",
+        "specVersion": "1.5",
+        "metadata": {
+          "component": {
+            "type": "application",
+            "name": "pollen_robotics-compat",
+            "purl": "pkg:etzhayyim/pollen_robotics-compat"
+          }
+        },
+        "components": [
+          {
+            "type": "library",
+            "name": "kotoba",
+            "scope": "required",
+            "purl": "pkg:etzhayyim/kotoba"
+          },
+          {
+            "type": "library",
+            "name": "kotodama-wasm",
+            "scope": "required",
+            "purl": "pkg:etzhayyim/kotodama-wasm"
+          },
+          {
+            "type": "library",
+            "name": "datomic-client",
+            "scope": "required",
+            "purl": "pkg:etzhayyim/datomic-client"
+          }
+        ]
+      }
+    }
+  }
+}

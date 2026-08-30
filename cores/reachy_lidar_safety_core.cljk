@@ -1,0 +1,128 @@
+(ns reachy-lidar-safety-core
+  (:export [status-detection-error status-no-object status-slowdown status-stop
+            scale-full scale-stop
+            reading-valid? distances-sane?
+            obstacle-status ramp-permille
+            sdk-speed-scale-permille governed-speed-scale-permille
+            motion-admitted?]))
+
+;; Decision core for the Reachy 2 mobile base's lidar safety gate
+;; (`MobileBaseLidarService`, protos/mobile_base_lidar.proto).
+;;
+;; What moved here: the classification of a lidar reading into
+;; LidarObstacleDetectionEnum, and how much of a commanded base speed survives
+;; it. What stayed on the host: the lidar scan itself, the reduction of a scan
+;; to a nearest distance, the gRPC round trip, and the metres -> millimetres
+;; conversion. None of those are decisions.
+;;
+;; Distances are INTEGER MILLIMETRES, not the f32 metres the wire carries. A
+;; lidar has centimetre-scale accuracy, so millimetres lose nothing real, and
+;; an integer comparison is the same comparison on every backend -- which is
+;; the whole point of moving this decision off the host. The conversion is one
+;; multiply on the host boundary and is covered by the parity corpus.
+;;
+;; -1 (any negative) means "no reading", NOT "nothing nearby". A lidar that
+;; returns nothing is the case this gate exists for, so it fails closed
+;; through the ordinary path rather than through a sentinel every caller has
+;; to remember.
+;;
+;; Oracle retained: src/pollen_robotics/main.cljc (`obstacle-status`,
+;; `governed-speed-scale-permille`).
+;; Parity: test/pollen_robotics/main_test.cljc (`lidar-core-parity`).
+
+;; -- the wire codes -------------------------------------------------------
+;; LidarObstacleDetectionEnum, pinned to the ordinals the proto declares. A
+;; rename or a reorder upstream must fail this, not pass for a new reason.
+
+(defn status-detection-error [] :i64 0)
+(defn status-no-object [] :i64 1)
+(defn status-slowdown [] :i64 2)
+(defn status-stop [] :i64 3)
+
+;; Speed survives as a permille scale: 1000 = the commanded speed, 0 = stopped.
+;; Permille rather than a float because this multiplies a velocity that a
+;; motor will actually execute.
+(defn scale-full [] :i64 1000)
+(defn scale-stop [] :i64 0)
+
+;; -- input sanity ---------------------------------------------------------
+
+(defn reading-valid? [distance-mm :i64] :bool
+  (>= distance-mm 0))
+
+(defn distances-sane? [safety-mm :i64 critical-mm :i64] :bool
+  ;; A critical ring at or inside zero, or a slowdown ring inside the critical
+  ;; ring, is a misconfiguration -- there is no reading it can classify
+  ;; correctly. Refusing to answer is the only safe answer.
+  (if (<= critical-mm 0)
+    false
+    (< critical-mm safety-mm)))
+
+;; -- classification -------------------------------------------------------
+
+(defn obstacle-status [distance-mm :i64 safety-mm :i64 critical-mm :i64] :i64
+  (if (not (reading-valid? distance-mm))
+    (status-detection-error)
+    (if (not (distances-sane? safety-mm critical-mm))
+      (status-detection-error)
+      (if (<= distance-mm critical-mm)
+        (status-stop)
+        (if (<= distance-mm safety-mm)
+          (status-slowdown)
+          (status-no-object))))))
+
+;; -- the ramp -------------------------------------------------------------
+
+(defn ramp-permille [distance-mm :i64 safety-mm :i64 critical-mm :i64] :i64
+  ;; Linear between the two rings: full speed at the slowdown ring, zero at
+  ;; the critical ring. `quot` truncates toward zero, so the scale is never
+  ;; rounded UP into a speed the ramp did not authorise.
+  (let [span (- safety-mm critical-mm)
+        over (- distance-mm critical-mm)]
+    (if (<= span 0)
+      (scale-stop)
+      (if (<= over 0)
+        (scale-stop)
+        ;; `min` is not in the admitted vocabulary, so the clamp is written out.
+        (let [raw (quot (* over 1000) span)]
+          (if (> raw (scale-full))
+            (scale-full)
+            raw))))))
+
+;; -- the two gates --------------------------------------------------------
+;;
+;; These deliberately differ, and the difference is the reason both are
+;; exported. `sdk-` reproduces what the robot does: LidarSafety.safety_on is
+;; an operator switch, and with it off the base executes the commanded speed.
+;; `governed-` is what an actor behind kotoba-lang/robotics' governor is
+;; allowed to command: an operator switch may relax a SLOWDOWN, but it may not
+;; turn a STOP or an unreadable lidar into motion.
+;;
+;; Reproducing only the first would make the actor unsafe; reproducing only
+;; the second would make it silently disagree with the robot. Naming both is
+;; what lets a caller state which one it meant.
+
+(defn sdk-speed-scale-permille [safety-on :bool distance-mm :i64 safety-mm :i64 critical-mm :i64] :i64
+  (if (not safety-on)
+    (scale-full)
+    (let [s (obstacle-status distance-mm safety-mm critical-mm)]
+      (if (= s (status-no-object))
+        (scale-full)
+        (if (= s (status-slowdown))
+          (ramp-permille distance-mm safety-mm critical-mm)
+          (scale-stop))))))
+
+(defn governed-speed-scale-permille [safety-on :bool distance-mm :i64 safety-mm :i64 critical-mm :i64] :i64
+  (let [s (obstacle-status distance-mm safety-mm critical-mm)]
+    (if (= s (status-stop))
+      (scale-stop)
+      (if (= s (status-detection-error))
+        (scale-stop)
+        (if (not safety-on)
+          (scale-full)
+          (if (= s (status-no-object))
+            (scale-full)
+            (ramp-permille distance-mm safety-mm critical-mm)))))))
+
+(defn motion-admitted? [safety-on :bool distance-mm :i64 safety-mm :i64 critical-mm :i64] :bool
+  (> (governed-speed-scale-permille safety-on distance-mm safety-mm critical-mm) 0))
