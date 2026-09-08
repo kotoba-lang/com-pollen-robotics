@@ -31,7 +31,7 @@
   live engine binds. This actor is policy and bookkeeping, not control -- it
   never drives a motor; it produces the record a governor
   (kotoba-lang/robotics) needs to refuse unsafe actuation before actuation."
-  (:require [clojure.string :as str]))
+  (:require [kotoba.lang.text :as str]))
 
 (def ns-prefix "pollen_robotics")
 (def tier "L5")
@@ -179,7 +179,7 @@
         :else 0.0))
 
 (defn as-bool [v]
-  (if (nil? v) false (contains? #{"1" "true" "yes" "on" true} (if (string? v) (str/lower-case v) v))))
+  (if (nil? v) false (contains? #{"1" "true" "yes" "on" true} (if (string? v) (str/lower v) v))))
 
 (defn coerce-field [kind v]
   (case kind :int (as-int v) :float (as-float v) :bool (as-bool v) v))
