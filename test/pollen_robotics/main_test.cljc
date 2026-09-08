@@ -25,7 +25,7 @@
 
   JVM: `clojure -M:test`. nbb: `npm test`."
   (:require [clojure.test :as t :refer [deftest is testing]]
-            [clojure.string :as str]
+            [kotoba.lang.text :as str]
             [pollen-robotics.main :as m]
             #?(:cljs ["fs" :as fs])))
 
