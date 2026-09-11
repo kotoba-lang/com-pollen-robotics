@@ -115,9 +115,9 @@ robot's state is what refuses it.
 ## Tests
 
 ```
-clojure -M:test     # JVM
+kbb -M:test     # JVM
 npm test            # nbb / ClojureScript
-clojure -M:lint     # clj-kondo
+kbb -M:lint     # clj-kondo
 ```
 
 15 tests, 329 assertions, green on both hosts.
@@ -162,7 +162,7 @@ is not doing.
 Both cores are verified against the admitted Kotoba grammar:
 
 ```
-nbb scripts/kotoba-surface-gap.cljs orgs/kotoba-lang/com-pollen-robotics/cores \
+kbb --backend sci scripts/kotoba-surface-gap.cljk orgs/kotoba-lang/com-pollen-robotics/cores \
   --frontend orgs/kotoba-lang/kotoba-sema/src/kotoba/compiler/frontend.cljc \
   --grammar  orgs/kotoba-lang/kotoba-lang/lang/guest-grammar.edn \
   --stdlib   orgs/kotoba-lang/kotoba-lang/lang/stdlib/core.kotoba
