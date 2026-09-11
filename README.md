@@ -22,7 +22,7 @@ needs to refuse unsafe actuation *before* actuation.
 | `.kotoba` | `schema/pollen_robotics.kotoba` | The resource shapes, EAVT-mapped. 12 entities. |
 | `.cljk` | `cores/reachy_lidar_safety_core.cljk` | The mobile base's lidar safety gate. |
 | `.cljk` | `cores/reachy_goto_core.cljk` | Goto admission and the `GoalStatus` lifecycle. |
-| `.cljc` | `src/pollen_robotics/main.cljc` | The host: CRUD fold, command handlers, and the cores' oracle. |
+| `.cljc` | `src/pollen_robotics/main.cljk` | The host: CRUD fold, command handlers, and the cores' oracle. |
 
 The split is not cosmetic. What is a **decision** — something that can answer
 "no", and whose answer must be the same on every backend — is in Kotoba.
