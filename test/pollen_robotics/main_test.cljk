@@ -23,7 +23,7 @@
   \"Running the execution parity\". Neither replaces the other, and this file
   does not claim the one it is not doing.
 
-  JVM: `clojure -M:test`. nbb: `npm test`."
+  JVM: `kbb -M:test`. nbb: `npm test`."
   (:require [clojure.test :as t :refer [deftest is testing]]
             [kotoba.lang.text :as str]
             [pollen-robotics.main :as m]

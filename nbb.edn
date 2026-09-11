@@ -1,2 +1,2 @@
-;; Classpath for nbb. Prefer `nbb -m …` / package.json scripts over bb.edn.
+;; Classpath for nbb. Prefer `kbb --backend sci -m …` / package.json scripts over bb.edn.
 {:paths ["src" "test"]}
