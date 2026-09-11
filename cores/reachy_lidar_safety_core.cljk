@@ -26,9 +26,9 @@
 ;; through the ordinary path rather than through a sentinel every caller has
 ;; to remember.
 ;;
-;; Oracle retained: src/pollen_robotics/main.cljc (`obstacle-status`,
+;; Oracle retained: src/pollen_robotics/main.cljk (`obstacle-status`,
 ;; `governed-speed-scale-permille`).
-;; Parity: test/pollen_robotics/main_test.cljc (`lidar-core-parity`).
+;; Parity: test/pollen_robotics/main_test.cljk (`lidar-core-parity`).
 
 ;; -- the wire codes -------------------------------------------------------
 ;; LidarObstacleDetectionEnum, pinned to the ordinals the proto declares. A

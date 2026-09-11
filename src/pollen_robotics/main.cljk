@@ -11,7 +11,7 @@
 
     schema/pollen_robotics.kotoba   the resource shapes, EAVT-mapped
     cores/*.cljk                    the decisions, in Kotoba
-    src/pollen_robotics/main.cljc   this: the host, and the cores' oracle
+    src/pollen_robotics/main.cljk   this: the host, and the cores' oracle
 
   Everything under `--- decision oracle ---` is a line-for-line restatement of
   the two `.cljk` cores. It exists so the host can answer without a WASM

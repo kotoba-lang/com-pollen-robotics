@@ -31,9 +31,9 @@
 ;; keep asserting it after a firmware change. `within-limit?` takes the
 ;; reported pair and treats an inverted or absent pair as a refusal.
 ;;
-;; Oracle retained: src/pollen_robotics/main.cljc (`admit-reason`,
+;; Oracle retained: src/pollen_robotics/main.cljk (`admit-reason`,
 ;; `transition-admitted?`).
-;; Parity: test/pollen_robotics/main_test.cljc (`goto-core-parity`).
+;; Parity: test/pollen_robotics/main_test.cljk (`goto-core-parity`).
 
 ;; -- the wire codes -------------------------------------------------------
 ;; InterpolationMode. NONE_INTERPOLATION (0) is the proto3 zero value, i.e.
