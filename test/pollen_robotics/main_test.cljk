@@ -24,7 +24,7 @@
   does not claim the one it is not doing.
 
   JVM: `kbb -M:test`. nbb: `npm test`."
-  (:require [clojure.test :as t :refer [deftest is testing]]
+  (:require [kotoba.test :as t :refer [deftest is testing]]
             [kotoba.lang.text :as str]
             [pollen-robotics.main :as m]
             #?(:cljs ["fs" :as fs])))
