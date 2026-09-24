@@ -31,7 +31,7 @@
   live engine binds. This actor is policy and bookkeeping, not control -- it
   never drives a motor; it produces the record a governor
   (kotoba-lang/robotics) needs to refuse unsafe actuation before actuation."
-  (:require [kotoba.lang.text :as str]))
+  (:require [kotoba.time :as kt] [kotoba.lang.text :as str]))
 
 (def ns-prefix "pollen_robotics")
 (def tier "L5")
@@ -153,13 +153,20 @@
 (def routes (into crud-routes command-routes))
 
 ;; --- platform primitives ---
-(defn now []
-  #?(:clj (str (java.time.Instant/now))
-     :cljs (.toISOString (js/Date.))))
+(defn system-clock
+  "The host boundary: epoch-millis from the host wall clock -- the one place
+  this namespace reads time. Everything else is handed a `clock` (the
+  kotoba.time/now contract: `(clock)` returns epoch-millis)."
+  []
+  #?(:clj (System/currentTimeMillis) :cljs (.now js/Date)))
+
+(defn now
+  "UTC ISO-8601 of `(clock)`, whole seconds (kotoba.time/->iso8601)."
+  [clock]
+  (kt/->iso8601 (kt/now clock)))
 
 (defn- rand-hex16 []
-  #?(:clj (subs (str/replace (str (java.util.UUID/randomUUID)) "-" "") 0 16)
-     :cljs (subs (str/replace (str (random-uuid)) "-" "") 0 16)))
+  (subs (str/replace (str (random-uuid)) "-" "") 0 16))
 
 (defn new-id [prefix] (str prefix "_" (rand-hex16)))
 
@@ -417,15 +424,17 @@
 (defn- spec-for [entity] (first (filter #(= (:entity %) entity) entity-specs)))
 (defn- not-found [] [{:error {:message "Not found" :type "not_found"}} 404])
 
-(defn handle-create [store entity data]
-  (let [{:keys [fields required coerce id-prefix]} (spec-for entity)]
-    (or (some-> (reject-unknown data fields) (vector 400))
-        (some-> (require-fields data required) (vector 400))
-        (let [base {:id (new-id id-prefix)}
-              rec (reduce (fn [m f] (assoc m f (coerce-field (get coerce f) (get data f)))) base fields)
-              rec (assoc rec :createdAt (now) :updatedAt (now))]
-          (persist! store entity rec)
-          [rec 201]))))
+(defn handle-create
+  ([store entity data] (handle-create store entity data system-clock))
+  ([store entity data clock]
+   (let [{:keys [fields required coerce id-prefix]} (spec-for entity)]
+     (or (some-> (reject-unknown data fields) (vector 400))
+         (some-> (require-fields data required) (vector 400))
+         (let [base {:id (new-id id-prefix)}
+               rec (reduce (fn [m f] (assoc m f (coerce-field (get coerce f) (get data f)))) base fields)
+               rec (assoc rec :createdAt (now clock) :updatedAt (now clock))]
+           (persist! store entity rec)
+           [rec 201])))))
 
 (defn handle-list [store entity params]
   (let [{:keys [fields]} (spec-for entity)
@@ -437,16 +446,18 @@
   (let [{:keys [refs]} (spec-for entity) rows (query store entity id)]
     (if (empty? rows) (not-found) [(expand store (first rows) params refs) 200])))
 
-(defn handle-update [store entity id data]
-  (let [{:keys [fields]} (spec-for entity) rows (query store entity id)]
-    (if (empty? rows)
-      (not-found)
-      (or (some-> (reject-unknown data fields) (vector 400))
-          (let [rec (reduce-kv (fn [m k v] (if (#{:id :createdAt} k) m (assoc m k v)))
-                               (first rows) data)
-                rec (assoc rec :updatedAt (now))]
-            (persist! store entity rec)
-            [rec 200])))))
+(defn handle-update
+  ([store entity id data] (handle-update store entity id data system-clock))
+  ([store entity id data clock]
+   (let [{:keys [fields]} (spec-for entity) rows (query store entity id)]
+     (if (empty? rows)
+       (not-found)
+       (or (some-> (reject-unknown data fields) (vector 400))
+           (let [rec (reduce-kv (fn [m k v] (if (#{:id :createdAt} k) m (assoc m k v)))
+                                (first rows) data)
+                 rec (assoc rec :updatedAt (now clock))]
+             (persist! store entity rec)
+             [rec 200]))))))
 
 (defn handle-delete [store entity id]
   (if (empty? (query store entity id)) (not-found) [(retract! store entity id) 200]))
@@ -497,67 +508,70 @@
   Returns [body status]: 201 with the accepted GoToRequest, or 409 with the
   reason the core gave. 409 rather than 400 -- the request is well-formed;
   the robot's state is what refuses it."
-  [store data]
-  (let [part (:part data)
-        space (or (:space data) "joint")
-        interp (as-int (:interpolation_mode data))
-        duration-ms (s->ms (:duration data))
-        targets (vec (:target data))
-        joints (joints-for-part part)
-        expected (count (or joints []))
-        shape (goto-shape-reason (part-ready? store part)
-                                 (count targets) expected interp duration-ms)
-        limits-ok (joint-limits-ok? store part targets)
-        reason (admit-reason shape limits-ok)]
-    (if-not (= reason reason-ok)
-      [{:error {:message reason
-                :type "goto_not_admitted"
-                :code (admit-code shape limits-ok)}} 409]
-      (let [rec {:id (new-id "reachy_goto")
-                 :part part :space space
-                 :interpolation_mode interp
-                 :duration (as-float (:duration data))
-                 :status goal-status-accepted
-                 :order_id (inc (count (query store "GoToRequest")))
-                 :createdAt (now) :updatedAt (now)}]
-        (persist! store "GoToRequest" rec)
-        [rec 201]))))
+  ([store data] (handle-goto-admit store data system-clock))
+  ([store data clock]
+   (let [part (:part data)
+         space (or (:space data) "joint")
+         interp (as-int (:interpolation_mode data))
+         duration-ms (s->ms (:duration data))
+         targets (vec (:target data))
+         joints (joints-for-part part)
+         expected (count (or joints []))
+         shape (goto-shape-reason (part-ready? store part)
+                                  (count targets) expected interp duration-ms)
+         limits-ok (joint-limits-ok? store part targets)
+         reason (admit-reason shape limits-ok)]
+     (if-not (= reason reason-ok)
+       [{:error {:message reason
+                 :type "goto_not_admitted"
+                 :code (admit-code shape limits-ok)}} 409]
+       (let [rec {:id (new-id "reachy_goto")
+                  :part part :space space
+                  :interpolation_mode interp
+                  :duration (as-float (:duration data))
+                  :status goal-status-accepted
+                  :order_id (inc (count (query store "GoToRequest")))
+                  :createdAt (now clock) :updatedAt (now clock)}]
+         (persist! store "GoToRequest" rec)
+         [rec 201])))))
 
 (defn handle-goto-cancel
   "GoToService.CancelGoTo. Reports progress only when it made some: a request
   already terminal, or already cancelling, is returned unchanged with ack
   false rather than reported as newly cancelled."
-  [store id]
-  (let [rows (query store "GoToRequest" id)]
-    (if (empty? rows)
-      (not-found)
-      (let [rec (first rows)
-            from (as-int (:status rec))
-            to (status-after-cancel from)]
-        (if (= from to)
-          [{:ack false :goto rec} 200]
-          (let [rec' (assoc rec :status to :updatedAt (now))]
-            (persist! store "GoToRequest" rec')
-            [{:ack true :goto rec'} 200]))))))
+  ([store id] (handle-goto-cancel store id system-clock))
+  ([store id clock]
+   (let [rows (query store "GoToRequest" id)]
+     (if (empty? rows)
+       (not-found)
+       (let [rec (first rows)
+             from (as-int (:status rec))
+             to (status-after-cancel from)]
+         (if (= from to)
+           [{:ack false :goto rec} 200]
+           (let [rec' (assoc rec :status to :updatedAt (now clock))]
+             (persist! store "GoToRequest" rec')
+             [{:ack true :goto rec'} 200])))))))
 
 (defn handle-goto-transition
   "Advance a request's GoalStatus. Refuses any walk the lifecycle does not
   admit, including a repeat of a terminal status -- so a duplicated
   completion event cannot be mistaken for progress."
-  [store id to]
-  (let [rows (query store "GoToRequest" id)]
-    (if (empty? rows)
-      (not-found)
-      (let [rec (first rows)
-            from (as-int (:status rec))
-            to (as-int to)]
-        (if-not (transition-admitted? from to)
-          [{:error {:message "transition-not-admitted"
-                    :type "invalid_state_transition"
-                    :from from :to to}} 409]
-          (let [rec' (assoc rec :status to :updatedAt (now))]
-            (persist! store "GoToRequest" rec')
-            [rec' 200]))))))
+  ([store id to] (handle-goto-transition store id to system-clock))
+  ([store id to clock]
+   (let [rows (query store "GoToRequest" id)]
+     (if (empty? rows)
+       (not-found)
+       (let [rec (first rows)
+             from (as-int (:status rec))
+             to (as-int to)]
+         (if-not (transition-admitted? from to)
+           [{:error {:message "transition-not-admitted"
+                     :type "invalid_state_transition"
+                     :from from :to to}} 409]
+           (let [rec' (assoc rec :status to :updatedAt (now clock))]
+             (persist! store "GoToRequest" rec')
+             [rec' 200])))))))
 
 (defn handle-safety-gate
   "Evaluate the lidar gate for one LidarSafety row and report BOTH scales.
